@@ -34,6 +34,8 @@ class Pay extends Base {
 
   protected key?: string; // APIv3密钥
   protected static certificates: { [key in string]: string } = {}; // 微信平台证书 key 是 serialNo, value 是 publicKey
+  protected wxPayPublicKey? :Buffer; // 支付平台公钥
+  protected wxPayPublicId? :string; // 支付平台密钥
   /**
    * 构造器
    * @param appid 直连商户申请的公众号或移动应用appid。
@@ -77,12 +79,20 @@ class Pay extends Base {
       this.authType = arg1.authType || 'WECHATPAY2-SHA256-RSA2048';
       this.userAgent = arg1.userAgent || '127.0.0.1';
       this.key = arg1.key;
+      if (arg1.wxPayPublicKey) {
+        this.wxPayPublicKey = arg1.wxPayPublicKey;
+      }
+      if (arg1.wxPayPublicId) {
+        this.wxPayPublicId = arg1.wxPayPublicId;
+      }
     } else {
       const _optipns = options || {};
       this.appid = arg1;
       this.mchid = mchid || '';
       this.publicKey = publicKey;
       this.privateKey = privateKey;
+      this.wxPayPublicKey = _optipns.wxPayPublicKey;
+      this.wxPayPublicId = _optipns.wxPayPublicId;
 
       this.authType = _optipns.authType || 'WECHATPAY2-SHA256-RSA2048';
       this.userAgent = _optipns.userAgent || '127.0.0.1';
@@ -194,6 +204,19 @@ class Pay extends Base {
   }) {
     const { timestamp, nonce, body, serial, signature, apiSecret } = params;
 
+    const serial_on = serial.startsWith('PUB_KEY_ID_');
+    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+    const data = `${timestamp}\n${nonce}\n${bodyStr}\n`;
+    const verify = crypto.createVerify('RSA-SHA256');
+
+    if (serial_on) {
+      if(!this.wxPayPublicKey) {
+        throw new Error('缺少微信支付公钥');
+      }
+      verify.update(data);
+      return verify.verify(this.wxPayPublicKey, signature, 'base64');
+    }
+
     let publicKey = Pay.certificates[serial];
 
     if (!publicKey) {
@@ -206,9 +229,7 @@ class Pay extends Base {
       throw new Error('平台证书序列号不相符，未找到平台序列号');
     }
 
-    const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-    const data = `${timestamp}\n${nonce}\n${bodyStr}\n`;
-    const verify = crypto.createVerify('RSA-SHA256');
+    
     verify.update(data);
 
     return verify.verify(publicKey, signature, 'base64');
@@ -363,7 +384,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/pay/transactions/h5';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -399,7 +420,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/pay/transactions/native';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -433,7 +454,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/pay/transactions/app';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     const result = await this.httpService.post(url, _params, headers);
     if (result.status === 200 && result.data.prepay_id) {
       const data = {
@@ -467,7 +488,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/app';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     const result = await this.httpService.post(url, _params, headers);
     if (result.status === 200 && result.data.prepay_id) {
       const data = {
@@ -501,7 +522,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/pay/transactions/jsapi';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     const result = await this.httpService.post(url, _params, headers);
     if (result.status === 200 && result.data.prepay_id) {
       const data = {
@@ -534,7 +555,7 @@ class Pay extends Base {
     const url = 'https://api.mch.weixin.qq.com/v3/combine-transactions/jsapi';
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     const result = await this.httpService.post(url, _params, headers);
     if (result.status === 200 && result.data.prepay_id) {
       const data = {
@@ -596,7 +617,7 @@ class Pay extends Base {
     };
     const url = `https://api.mch.weixin.qq.com/v3/pay/transactions/out-trade-no/${out_trade_no}/close`;
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -614,7 +635,7 @@ class Pay extends Base {
     };
     const url = `https://api.mch.weixin.qq.com/v3/combine-transactions/out-trade-no/${combine_out_trade_no}/close`;
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -684,7 +705,7 @@ class Pay extends Base {
     };
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json', 'Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -717,7 +738,7 @@ class Pay extends Base {
     delete _params.wx_serial_no;
     const authorization = this.buildAuthorization('POST', url, _params);
 
-    const headers = this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
+    const headers = this.wxPayPublicId ? this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.wxPayPublicId, 'Content-Type': 'application/json' }) :  this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -794,7 +815,7 @@ class Pay extends Base {
     delete _params.wx_serial_no;
     const authorization = this.buildAuthorization('POST', url, _params);
 
-    const headers = this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
+    const headers = this.wxPayPublicId ? this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.wxPayPublicId, 'Content-Type': 'application/json' }) :  this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -824,7 +845,7 @@ class Pay extends Base {
     };
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json','Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -857,7 +878,7 @@ class Pay extends Base {
     };
 
     const authorization = this.buildAuthorization('POST', url, _params);
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json','Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -889,7 +910,7 @@ class Pay extends Base {
     delete _params.wx_serial_no;
     const authorization = this.buildAuthorization('POST', url, _params);
 
-    const headers = this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
+    const headers = this.wxPayPublicId ? this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.wxPayPublicId, 'Content-Type': 'application/json' }) :  this.getHeaders(authorization, { 'Wechatpay-Serial': serial_no || this.serial_no, 'Content-Type': 'application/json' });
     return await this.httpService.post(url, _params, headers);
   }
   /**
@@ -908,7 +929,7 @@ class Pay extends Base {
 
     const authorization = this.buildAuthorization('POST', url, _params);
 
-    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json' });
+    const headers = this.getHeaders(authorization, { 'Content-Type': 'application/json','Wechatpay-Serial' : this.wxPayPublicId ? this.wxPayPublicId : null });
     return await this.httpService.post(url, _params, headers);
   }
   /**
